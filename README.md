@@ -39,5 +39,4 @@ web/            viewer page and program guide
 ## Note
 
 Homebrew's default `ffmpeg` formula was slimmed down and **omits both `libsrt` and `libfreetype`** —
-which removes SRT output and the `drawtext` filter, i.e. two of this project's requirements. Use
-`ffmpeg-full`.
+which removes SRT output and the `drawtext` filter. Use `ffmpeg-full`.
