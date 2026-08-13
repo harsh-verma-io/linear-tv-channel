@@ -26,6 +26,31 @@ AUDIO_BITRATE=128k
 # --- HLS tuning. -----------------------------------------------------------
 SEGMENT_TIME="${SEGMENT_TIME:-6}"        # seconds per segment
 PLAYLIST_SIZE="${PLAYLIST_SIZE:-6}"      # how many segments exist in manifest
+
+# --- Stamped wall-clock. ---------------------------------------------------
+# Stamps wall-clock time onto every outgoing frame, so the delay between what
+# the channel is producing and what a viewer sees becomes visible to the eye.
+# CLOCK=0 to turn it off
+CLOCK="${CLOCK:-1}"
+
+# Monospace fonts used since proportional digits change width as they tick, so the
+# clock visibly jitters.
+FONT=""
+for f in "/System/Library/Fonts/Supplemental/Courier New.ttf" \
+         "/System/Library/Fonts/Supplemental/Arial.ttf" \
+         "/System/Library/Fonts/Helvetica.ttc"
+do
+    if [[ -f "$f" ]]; then FONT="$f"; break; fi
+done
+
+if [[ "$CLOCK" == "1" && -n "$FONT" ]]; then
+    VF="drawtext=fontfile=${FONT}:text='%{localtime\\:%T}'"
+    VF+=":fontcolor=white:fontsize=48:box=1:boxcolor=black@0.65:boxborderw=16"
+    VF+=":x=(w-text_w)/2:y=30"
+else
+    VF="null"          # passthrough — the filter chain still needs to exist
+fi
+
 # ---------------------------------------------------------------------------
 # Check if playlist exists
 # ---------------------------------------------------------------------------
@@ -38,7 +63,6 @@ fi
 # Clear last run's segments. Old .ts files left behind confuse a player that
 # reconnects, and they quietly consume disk.
 rm -f "$OUT"/*.ts "$OUT"/*.m3u8
-
 
 echo "================================================================"
 echo " CHANNEL ON AIR"
@@ -59,6 +83,9 @@ exec ffmpeg -hide_banner -loglevel warning -stats \
     -re \
     -stream_loop -1 \
     -f concat -safe 0 -i "$PLAYLIST" \
+    \
+    `# --- FILTERS -------------------------------------------------------` \
+    -vf "$VF" \
     \
     `# --- VIDEO ENCODE --------------------------------------------------` \
     -c:v libx264 -preset veryfast -profile:v main -pix_fmt yuv420p \
