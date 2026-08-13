@@ -27,10 +27,9 @@ AUDIO_BITRATE=128k
 SEGMENT_TIME="${SEGMENT_TIME:-6}"        # seconds per segment
 PLAYLIST_SIZE="${PLAYLIST_SIZE:-6}"      # how many segments exist in manifest
 
-# --- Stamped wall-clock. ---------------------------------------------------
+# --- Stamped wall-clock. CLOCK=0 to turn it off. ---------------------------
 # Stamps wall-clock time onto every outgoing frame, so the delay between what
 # the channel is producing and what a viewer sees becomes visible to the eye.
-# CLOCK=0 to turn it off
 CLOCK="${CLOCK:-1}"
 
 # Monospace fonts used since proportional digits change width as they tick, so the
@@ -49,6 +48,27 @@ if [[ "$CLOCK" == "1" && -n "$FONT" ]]; then
     VF+=":x=(w-text_w)/2:y=30"
 else
     VF="null"          # passthrough — the filter chain still needs to exist
+fi
+
+# --- Second output over SRT. SRT=0 to turn it off. -------------------------
+# Two destinations through one encoder. Identical frames and identical wall-clock
+# go to both, so any difference we might see is transport, not encoding.
+SRT="${SRT:-1}"
+SRT_PORT="${SRT_PORT:-9999}"
+
+# onfail=ignore on both, so losing one output never kills the channel.
+HLS_OPTS="f=hls"
+HLS_OPTS+=":hls_time=${SEGMENT_TIME}"
+HLS_OPTS+=":hls_list_size=${PLAYLIST_SIZE}"
+HLS_OPTS+=":hls_flags=delete_segments+program_date_time+independent_segments"
+HLS_OPTS+=":hls_segment_type=mpegts"
+HLS_OPTS+=":hls_segment_filename=${OUT}/segment_%05d.ts"
+HLS_OPTS+=":onfail=ignore"
+
+TEE="[${HLS_OPTS}]${OUT}/index.m3u8"
+
+if [[ "$SRT" == "1" ]]; then
+    TEE+="|[f=mpegts:onfail=ignore]srt://127.0.0.1:${SRT_PORT}?mode=caller"
 fi
 
 # ---------------------------------------------------------------------------
@@ -95,11 +115,5 @@ exec ffmpeg -hide_banner -loglevel warning -stats \
     `# --- AUDIO ENCODE --------------------------------------------------` \
     -c:a aac -b:a "$AUDIO_BITRATE" -ar 48000 -ac 2 \
     \
-    `# --- HLS OUTPUT ----------------------------------------------------` \
-    -f hls \
-    -hls_time "$SEGMENT_TIME" \
-    -hls_list_size "$PLAYLIST_SIZE" \
-    -hls_flags delete_segments+program_date_time+independent_segments \
-    -hls_segment_type mpegts \
-    -hls_segment_filename "$OUT/segment_%05d.ts" \
-    "$OUT/index.m3u8"
+    `# --- TWO OUTPUTS FROM ONE ENCODE -----------------------------------` \
+    -f tee -map 0:v -map 0:a "$TEE"
