@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Channel 4</title>
+
+<style>
+  :root {
+    --bg:     #0d0d0f;
+    --panel:  #17171b;
+    --line:   #2a2a30;
+    --text:   #e8e8ea;
+    --dim:    #8a8a94;
+    --good:   #4ade80;
+    --warn:   #fbbf24;
+    --bad:    #f87171;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 48px;
+  }
+
+  h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin: 0 0 16px;
+  }
+
+  video {
+    width: 100%;
+    max-width: 960px;
+    background: #000;
+    border-radius: 8px;
+    display: block;
+  }
+
+  .panel {
+    width: 100%;
+    max-width: 960px;
+    margin-top: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 18px 20px;
+  }
+
+  .readout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    align-items: baseline;
+  }
+
+  .metric { min-width: 130px; }
+
+  .metric .label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  .metric .value {
+    font: 600 26px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+    margin-top: 2px;
+  }
+
+  .metric .value.small {
+    font-size: 17px;
+    font-weight: 400;
+  }
+
+  .controls { margin-top: 18px; display: flex; gap: 10px; }
+
+  button {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--dim); }
+
+  #status {
+    margin-top: 14px;
+    font-size: 12.5px;
+    color: var(--dim);
+    min-height: 1.4em;
+  }
+</style>
+</head>
+
+<body>
+
+<h1>Channel 4 &mdash; live</h1>
+
+<video id="video" controls playsinline muted></video>
+
+<div class="panel">
+  <div class="readout">
+    <div class="metric">
+      <div class="label">Latency</div>
+      <div class="value" id="latency">&mdash;</div>
+    </div>
+    <div class="metric">
+      <div class="label">Frame timestamp</div>
+      <div class="value small" id="frameTime">&mdash;</div>
+    </div>
+    <div class="metric">
+      <div class="label">Buffer ahead</div>
+      <div class="value small" id="buffer">&mdash;</div>
+    </div>
+    <div class="metric">
+      <div class="label">Dropped frames</div>
+      <div class="value small" id="dropped">&mdash;</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="goLive">Jump to live</button>
+    <button id="play">Play</button>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<script src="hls.min.js"></script>
+<script type="module">
+
+const STREAM   = "/stream/index.m3u8";
+const video    = document.getElementById("video");
+const statusEl = document.getElementById("status");
+
+// Elements the readout writes to. Found once, not four times a second.
+const latEl     = document.getElementById("latency");
+const timeEl    = document.getElementById("frameTime");
+const bufferEl  = document.getElementById("buffer");
+const droppedEl = document.getElementById("dropped");
+
+let hls = null;
+
+const say = (msg) => { statusEl.textContent = msg; };
+
+// ---------------------------------------------------------------------------
+// Player setup.
+//
+// hls.js wherever possible, exposes playingDate, which native playback does
+// not. Native is the iOS fallback, where Media Source Extensions do not exist 
+// and hls.js cannot run at all.
+// ---------------------------------------------------------------------------
+if (window.Hls?.isSupported()) {
+  hls = new Hls({
+    // How far behind the live edge to sit, counted in segments. The default
+    // is 3. This is the single biggest contributor to latency after segment
+    // length itself.
+    liveSyncDurationCount: 3,
+
+    // If we fall further behind than this, seek forward rather than stay behind.
+    liveMaxLatencyDurationCount: 5,
+
+    // Instead of jumping (visible), play slightly fast until caught up.
+    // This is the fix for a player that drifts further behind after a pause.
+    maxLiveSyncPlaybackRate: 1.05,
+
+    // Do not keep old segments around; this is a channel, not a video.
+    backBufferLength: 30
+  });
+
+  hls.loadSource(STREAM);
+  hls.attachMedia(video);
+
+  hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    say("Manifest loaded. Press play if it does not start.");
+    video.play().catch(() => {
+      say("Autoplay blocked by the browser — press play.");
+    });
+  });
+
+  hls.on(Hls.Events.ERROR, (_evt, data) => {
+    if (!data.fatal) return;
+    say(`Error: ${data.type} / ${data.details} — recovering.`);
+    if (data.type === Hls.ErrorTypes.NETWORK_ERROR)      hls.startLoad();
+    else if (data.type === Hls.ErrorTypes.MEDIA_ERROR)   hls.recoverMediaError();
+    else                                                 hls.destroy();
+  });
+
+} else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+  video.src = STREAM;
+  say("Native HLS playback (Safari/iOS).");
+
+} else {
+  say("This browser cannot play HLS.");
+}
+
+// ---------------------------------------------------------------------------
+// Latency.
+//
+// Both paths ultimately read EXT-X-PROGRAM-DATE-TIME from the manifest; they
+// just expose it differently:
+//
+//   hls.js  -> hls.playingDate      wall-clock time of the frame on screen
+//   Safari  -> video.getStartDate() wall-clock time of media time ZERO,
+//                                   so add currentTime to reach the same number
+//
+// Subtract from now and we have end-to-end latency.
+// ---------------------------------------------------------------------------
+
+// Wall-clock Date of the frame currently displayed, or null if unavailable.
+const currentFrameDate = () => {
+  if (hls?.playingDate) return hls.playingDate;
+
+  // getStartDate() is WebKit-only, and returns an Invalid Date until the player
+  // has actually read a PROGRAM-DATE-TIME tag — hence both guards.
+  const start = video.getStartDate?.();
+  if (start && !Number.isNaN(start.getTime())) {
+    // getTime() is milliseconds, currentTime is seconds. Convert before adding.
+    return new Date(start.getTime() + video.currentTime * 1000);
+  }
+
+  return null;
+};
+
+const bufferAhead = () => {
+  const b = video.buffered;
+  for (let i = 0; i < b.length; i++) {
+    if (video.currentTime >= b.start(i) && video.currentTime <= b.end(i)) {
+      return b.end(i) - video.currentTime;
+    }
+  }
+  return 0;
+};
+
+const tick = () => {
+  const frameDate = currentFrameDate();
+
+  if (frameDate) {
+    const seconds = (Date.now() - frameDate.getTime()) / 1000;
+
+    latEl.textContent = `${seconds.toFixed(1)}s`;
+    latEl.style.color = seconds < 5  ? "var(--good)"
+                      : seconds < 20 ? "var(--warn)"
+                      :                "var(--bad)";
+
+    timeEl.textContent = frameDate.toTimeString().slice(0, 8);
+  }
+
+  bufferEl.textContent = `${bufferAhead().toFixed(1)}s`;
+
+  const q = video.getVideoPlaybackQuality?.();
+  droppedEl.textContent = q?.droppedVideoFrames ?? "n/a";
+};
+
+setInterval(tick, 250);
+
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+document.getElementById("goLive").addEventListener("click", () => {
+  if (hls?.liveSyncPosition) {
+    video.currentTime = hls.liveSyncPosition;
+  } else if (video.seekable.length) {
+    video.currentTime = video.seekable.end(video.seekable.length - 1);
+  }
+  video.play();
+  say("Jumped to the live edge.");
+});
+
+document.getElementById("play").addEventListener("click", () => {
+  video.play();
+  say("");
+});
+</script>
+
+</body>
+</html>
