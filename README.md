@@ -3,11 +3,11 @@
 A self-running linear television channel, built from scratch on macOS, plus an investigation into
 end-to-end streaming latency.
 
-> **This is a lab / test environment.**
+> **This is a lab/test environment.**
 
 Not video-on-demand. A **linear channel**: it plays continuously on a schedule whether or not anyone
-is watching. Tune in at 8:47pm and you get whatever is playing at 8:47pm, mid-scene. No pause, no
-rewind, no catch-up.
+is watching. Tune in at 8:47 pm, and you will get whatever is playing at 8:47 pm, mid-scene. Pauses, rewinds,
+and catch-ups are not allowed. 
 
 ## Status
 
