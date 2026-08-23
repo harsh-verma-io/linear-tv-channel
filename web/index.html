@@ -146,13 +146,35 @@ const STREAM   = "/stream/index.m3u8";
 const video    = document.getElementById("video");
 const statusEl = document.getElementById("status");
 
-// Elements the readout writes to. Found once, not four times a second.
+// Elements the readout writes to.
 const latEl     = document.getElementById("latency");
 const timeEl    = document.getElementById("frameTime");
 const bufferEl  = document.getElementById("buffer");
 const droppedEl = document.getElementById("dropped");
 
+// Extract params from browser query string so we can configure the player
+// and store them in postgres using the same variable.
+const params = new URLSearchParams(location.search);
+const SYNC_COUNT = params.get("sync") ? Number(params.get("sync")) : 3;
+const THROTTLE   = params.get("throttle") ? Number(params.get("throttle")) : null;
+const LABEL      = params.get("label");
+const POST_EVERY = 5000;
+
 let hls = null;
+let segmentTime  = null;
+let playlistSize = null;
+
+// When this script started running. performance.now() rather than Date.now():
+// it is measured from page load, has sub-millisecond resolution, and is immune
+// to the system clock being adjusted mid-measurement.
+const pageLoadedAt = performance.now();
+
+// Filled in once, when the first frame appears.
+let startupMs = null;
+
+let stalls = 0;
+
+video.addEventListener("waiting", () => { stalls += 1; });
 
 const say = (msg) => { statusEl.textContent = msg; };
 
@@ -168,7 +190,7 @@ if (window.Hls?.isSupported()) {
     // How far behind the live edge to sit, counted in segments. The default
     // is 3. This is the single biggest contributor to latency after segment
     // length itself.
-    liveSyncDurationCount: 3,
+    liveSyncDurationCount: SYNC_COUNT,
 
     // If we fall further behind than this, seek forward rather than stay behind.
     liveMaxLatencyDurationCount: 5,
@@ -189,6 +211,14 @@ if (window.Hls?.isSupported()) {
     video.play().catch(() => {
       say("Autoplay blocked by the browser — press play.");
     });
+  });
+
+  hls.on(Hls.Events.LEVEL_LOADED, (_evt, data) => {
+    const frags = data.details.fragments;
+    if (!frags.length) return;
+
+    segmentTime  = frags[0].duration;
+    playlistSize = frags.length;
   });
 
   hls.on(Hls.Events.ERROR, (_evt, data) => {
@@ -266,6 +296,93 @@ const tick = () => {
 };
 
 setInterval(tick, 250);
+
+// ---------------------------------------------------------------------------
+// POSTing to Postgres.
+//
+// One row in `runs` when page load, then one row in `samples` every few
+// seconds pointing at it using run_id. 
+// ---------------------------------------------------------------------------
+let runId = null;
+let runStarting = false; 
+
+const startRun = async () => {
+  if (runId !== null) return;         // already started; since 'playing' fires repeatedly
+  if (segmentTime === null) return;   // no manifest data (native playback)
+
+  if (runStarting) return;
+  runStarting = true;
+  
+  // Auto-generated unless ?label= was supplied.
+  let label = `seg=${segmentTime}s, sync=${SYNC_COUNT}`;
+  if (THROTTLE) label += `, ${THROTTLE}kbps`;
+
+  try {
+    const res = await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // The server needs JSON text, not a JavaScript object.
+      body: JSON.stringify({
+        label:         LABEL ?? label,
+        segment_time:  segmentTime,
+        playlist_size: playlistSize,
+        sync_count:    SYNC_COUNT,
+        throttle_kbps: THROTTLE,
+        startup_ms:    startupMs,
+      }),
+    });
+
+    // fetch only rejects on network failure. A 400 or 500 is a *successful*
+    // request with a bad status, so it has to be checked manually.
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
+    runId = data.run_id;
+    say(`Recording run ${runId} — ${LABEL ?? label}`);
+  } catch (err) {
+    say(`Not recording (${err.message}). Playback unaffected.`);
+  }
+};
+
+// First frame on screen. Measure startup, then open the run.
+// Order matters: startRun() sends startupMs, so it has to exist first.
+video.addEventListener("playing", () => {
+  if (startupMs === null) {
+    startupMs = Math.round(performance.now() - pageLoadedAt);
+  }
+  startRun();
+});
+
+const postSample = async () => {
+  if (runId === null) return;
+
+  const frameDate = currentFrameDate();
+  if (!frameDate) return;
+
+  const q = video.getVideoPlaybackQuality?.();
+
+  try {
+    await fetch("/api/sample", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        run_id:         runId,
+        latency_s:      (Date.now() - frameDate.getTime()) / 1000,
+        buffer_ahead_s: bufferAhead(),
+        // Dropped alone is meaningless; the total is what makes it a rate.
+        dropped_frames: q?.droppedVideoFrames ?? null,
+        total_frames:   q?.totalVideoFrames   ?? null,
+        stall_count:    stalls,
+      }),
+    });
+  } catch {
+    // Best effort. A missed sample is one gap in the chart, not a failure
+    // worth interrupting the stream.
+  }
+};
+
+// Differs from tick(): the display wants 4x/second, the database 1x/POST_EVERY-seconds.
+setInterval(postSample, POST_EVERY);
 
 // ---------------------------------------------------------------------------
 // Controls
