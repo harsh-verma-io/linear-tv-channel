@@ -107,8 +107,9 @@ def add_sample():
         sample_id = insert(
             """
             INSERT INTO samples (run_id, latency_s, buffer_ahead_s,
-                                 dropped_frames, total_frames, stall_count)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                                 dropped_frames, total_frames, stall_count,
+                                 playback_rate)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -118,6 +119,7 @@ def add_sample():
                 body.get("dropped_frames"),
                 body.get("total_frames"),
                 body.get("stall_count"),
+                body.get("playback_rate"),
             ),
         )
     except psycopg.errors.ForeignKeyViolation:

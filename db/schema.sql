@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS samples (
     buffer_ahead_s REAL,
     dropped_frames INT,
     total_frames   INT,
-    stall_count    INT
+    stall_count    INT,
+    playback_rate  REAL
 );
 
 CREATE INDEX IF NOT EXISTS samples_run_time ON samples (run_id, recorded_at);

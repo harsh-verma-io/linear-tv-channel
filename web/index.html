@@ -158,7 +158,7 @@ const params = new URLSearchParams(location.search);
 const SYNC_COUNT = params.get("sync") ? Number(params.get("sync")) : 3;
 const THROTTLE   = params.get("throttle") ? Number(params.get("throttle")) : null;
 const LABEL      = params.get("label");
-const POST_EVERY = 5000;
+const POST_EVERY = 1000;
 
 let hls = null;
 let segmentTime  = null;
@@ -373,6 +373,7 @@ const postSample = async () => {
         dropped_frames: q?.droppedVideoFrames ?? null,
         total_frames:   q?.totalVideoFrames   ?? null,
         stall_count:    stalls,
+        playback_rate:  video.playbackRate,
       }),
     });
   } catch {
