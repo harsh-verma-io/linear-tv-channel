@@ -18,8 +18,8 @@ Postgres. Across fourteen runs and about 8,400 measurements, a few things came
 out clearly.
 
 <p align="center">
-  <img src="docs/fig1-latency-vs-segment.png" width="49%" alt="Latency against segment length">
-  <img src="docs/fig5-soak-hour.png" width="49%" alt="One hour of continuous operation">
+  <img src="docs/fig1-latency-vs-segment.png" width="39%" valign="top" alt="Latency against segment length">
+  <img src="docs/fig5-soak-hour.png" width="59%" valign="top" alt="One hour of continuous operation">
 </p>
 
 **Latency is a fixed multiple of segment length.** Roughly 3.5x, and that
