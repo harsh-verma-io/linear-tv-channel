@@ -97,17 +97,17 @@ a summary straight from the database.
 ## Layout
 
 ```
-app/         latency_log.py   Flask API, records runs and readings
-             chart.py         reads Postgres, writes the figures
-db/          schema.sql       two tables, runs and samples
-scripts/     playout.sh       the channel itself, one FFmpeg process
-             experiment.sh    runs one measured condition, start to finish
-             make-clips.sh    generates format-consistent test footage
-             make-playlist.sh builds the running order
-nginx/       tv-channel.conf  serves the page, the stream, and proxies the API
-web/         index.html       viewer with a live latency readout
-data/        runs.csv         every run and every reading, as recorded
-docs/        findings.md      the findings, plus six figures
+app/         latency_log.py        Flask API, records runs and readings
+             chart.py              reads Postgres, writes the figures
+db/          schema.sql            two tables, runs and samples
+scripts/     playout.sh            the channel itself, one FFmpeg process
+             experiment.sh         runs one measured condition, start to finish
+             make-test-clips.sh    generates format-consistent test footage
+             make-playlist.sh      builds the running order
+nginx/       tv-channel.conf       serves the page, the stream, and proxies the API
+web/         index.html            viewer with a live latency readout
+data/        runs.csv              every run and every reading, as recorded
+docs/        findings.md           the findings, plus six figures
 media/       source video (gitignored)
 stream/      live HLS output (gitignored, regenerated constantly)
 ```
