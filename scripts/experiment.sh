@@ -156,10 +156,13 @@ echo "      manifest full."
 # profile will make them take effect.
 # ---------------------------------------------------------------------------
 echo "[3/4] Opening lab browser..."
+# Start from a clean profile every run.
+rm -rf "$CHROME_PROFILE"
 "$CHROME" \
     --disable-background-timer-throttling \
     --disable-renderer-backgrounding \
     --disable-backgrounding-occluded-windows \
+    --hide-crash-restore-bubble \
     --user-data-dir="$CHROME_PROFILE" \
     --new-window \
     --autoplay-policy=no-user-gesture-required \
