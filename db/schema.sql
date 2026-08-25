@@ -43,3 +43,32 @@ CREATE TABLE IF NOT EXISTS samples (
 );
 
 CREATE INDEX IF NOT EXISTS samples_run_time ON samples (run_id, recorded_at);
+
+-- ---------------------------------------------------------------------------
+-- broadcasts — one row per playout start. The anchor the guide counts from.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS broadcasts (
+    id         BIGSERIAL PRIMARY KEY,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),  -- the loop's zero point
+    cycle_s    REAL        NOT NULL,                -- one full lap, in seconds
+    item_count INT         NOT NULL
+);
+
+-- ---------------------------------------------------------------------------
+-- broadcast_items — the running order, one row per line in playlist.txt.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS broadcast_items (
+    id           BIGSERIAL PRIMARY KEY,
+
+    broadcast_id BIGINT NOT NULL REFERENCES broadcasts(id) ON DELETE CASCADE,
+
+    position     INT    NOT NULL,   -- 0-based, order within the loop
+    title        TEXT   NOT NULL,   -- "Morning Show", from the filename
+    filename     TEXT   NOT NULL,   -- "01-morning-show.mp4"
+    kind         TEXT   NOT NULL,   -- program | ident | ad, from the folder
+    offset_s     REAL   NOT NULL,   -- seconds from the top of the loop
+    duration_s   REAL   NOT NULL,
+
+    -- One item per slot. Catches if script writes the same position twice.
+    UNIQUE (broadcast_id, position)
+);
