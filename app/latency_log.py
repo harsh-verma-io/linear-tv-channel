@@ -136,8 +136,8 @@ def add_sample():
 # ---------------------------------------------------------------------------
 # GET /api/guide — what is on air at a given moment.
 # ---------------------------------------------------------------------------
-UPCOMING = 4          # how many items to list beyond "next"
-
+UPCOMING = 20          # how many items to list beyond "next"
+LIST_KIND = "program"  # what the listing shows; "now" is never filtered
 
 @app.get("/api/guide")
 def guide():
@@ -219,19 +219,27 @@ def guide():
     now = described(index, cursor)
     now["remaining_s"] = round(items[index]["duration_s"] - into, 1)
 
+    # Step through every item, but only list the programmes.
     schedule = []
     cursor += timedelta(seconds=items[index]["duration_s"])
-    for n in range(1, UPCOMING + 1):
+
+    wanted = UPCOMING + 1                  # "next", plus the upcoming list
+    limit = len(items) * wanted            # stop rather than spin
+
+    n = 1
+    while len(schedule) < wanted and n <= limit:
         i = (index + n) % len(items)
-        schedule.append(described(i, cursor))
+        if items[i]["kind"] == LIST_KIND:
+            schedule.append(described(i, cursor))
         cursor += timedelta(seconds=items[i]["duration_s"])
+        n += 1
 
     return jsonify(
         broadcast_id=broadcast_id,
         at=at.isoformat(),
         cycle_s=round(cycle_s, 1),
         now=now,
-        next=schedule[0],
+        next=schedule[0] if schedule else None,
         upcoming=schedule[1:],
     )
 

@@ -49,7 +49,7 @@
 
   .panel {
     width: 100%;
-    max-width: 960px;
+    max-width: 1276px;
     margin-top: 16px;
     background: var(--panel);
     border: 1px solid var(--line);
@@ -102,6 +102,80 @@
     color: var(--dim);
     min-height: 1.4em;
   }
+
+  .stage {
+    width: 100%;
+    max-width: 1276px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  #guide {
+    margin-top: 0;
+
+    display: flex;
+    flex-direction: column;
+
+    --row: 27px;
+  }
+
+  @media (min-width: 1000px) {
+    .stage { flex-direction: row; }
+    .stage > video { flex: 1 1 0; min-width: 0; }
+
+    .guide-slot { flex: 0 0 300px; position: relative; }
+    .guide-slot > #guide { position: absolute; inset: 0; }
+  }
+
+  #guide .now {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  #guide .tag {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  #guide .title { font-size: 20px; font-weight: 600; }
+  #guide .left  { font-size: 13px; color: var(--dim); margin-left: auto; }
+
+  #guide ol {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+
+    /* Stacked layout: four rows, then scroll. */
+    max-height: calc(var(--row) * 4);
+    overflow-y: auto;
+  }
+
+  #guide li {
+    display: flex;
+    gap: 14px;
+    padding: 3px 0;
+    font-size: 14px;
+    color: var(--dim);
+  }
+
+  #guide li .t {
+    font: 400 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    min-width: 90px;
+  }
+
+  @media (min-width: 1000px) {
+    #guide ol {
+      max-height: none;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+  }
 </style>
 </head>
 
@@ -109,7 +183,20 @@
 
 <h1>Channel 4 &mdash; live</h1>
 
-<video id="video" controls playsinline muted></video>
+<div class="stage">
+  <video id="video" controls playsinline muted></video>
+
+  <div class="guide-slot">
+    <div class="panel" id="guide">
+      <div class="now">
+        <div class="tag">Now</div>
+        <div class="title" id="nowTitle">&mdash;</div>
+        <div class="left" id="nowLeft"></div>
+      </div>
+      <ol id="nextList"></ol>
+    </div>
+  </div>
+</div>
 
 <div class="panel">
   <div class="readout">
@@ -275,6 +362,77 @@ const bufferAhead = () => {
   return 0;
 };
 
+// ---------------------------------------------------------------------------
+// Programme guide.
+//
+// The response has ends_at, so the page refetches at that moment rather than 
+// polling on a timer.
+// ---------------------------------------------------------------------------
+const nowTitleEl = document.getElementById("nowTitle");
+const nowLeftEl  = document.getElementById("nowLeft");
+const nextListEl = document.getElementById("nextList");
+
+const OFF_AIR = { ad: "Ad break", ident: "Back shortly" };
+
+let guide = null;
+let guideBusy = false;
+
+// Support viewer local time zone. 
+const clockOf = (iso) => new Date(iso).toLocaleTimeString();
+
+const renderGuide = () => {
+  nextListEl.replaceChildren();
+
+  if (!guide) {
+    nowTitleEl.textContent = "\u2014";
+    nowLeftEl.textContent  = "";
+    return;
+  }
+
+  nowTitleEl.textContent = OFF_AIR[guide.now.kind] ?? guide.now.title;
+
+  for (const item of [guide.next, ...guide.upcoming]) {
+    if (!item) continue;
+    const li = document.createElement("li");
+    const t  = document.createElement("span");
+    t.className   = "t";
+    t.textContent = clockOf(item.starts_at);
+    li.append(t, item.title);
+    nextListEl.append(li);
+  }
+};
+
+const fetchGuide = async (frameDate) => {
+  // Set synchronously, before the first await. Otherwise two ticks could both
+  // get past the check while the first request is still in progress.
+  if (guideBusy) return;
+  guideBusy = true;
+
+  try {
+    const res = await fetch(`/api/guide?at=${frameDate.toISOString()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    guide = await res.json();
+  } catch {
+    guide = null;          // blank the panel; playback is untouched
+  } finally {
+    guideBusy = false;
+    renderGuide();
+  }
+};
+
+const updateGuide = (frameDate) => {
+  // Refetch when there is nothing yet, or when the frame has passed the item.
+  if (!guide
+      || frameDate >= new Date(guide.now.ends_at)
+      || frameDate <  new Date(guide.now.starts_at)) {
+    fetchGuide(frameDate);
+    return;
+  }
+
+  const left = (new Date(guide.now.ends_at) - frameDate) / 1000;
+  nowLeftEl.textContent = `${Math.ceil(left)}s left`;
+};
+
 const tick = () => {
   const frameDate = currentFrameDate();
 
@@ -287,6 +445,8 @@ const tick = () => {
                       :                "var(--bad)";
 
     timeEl.textContent = frameDate.toTimeString().slice(0, 8);
+
+    updateGuide(frameDate);
   }
 
   bufferEl.textContent = `${bufferAhead().toFixed(1)}s`;
