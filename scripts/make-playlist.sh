@@ -51,21 +51,21 @@ A="$ROOT/media/ads"
 # Pattern: ident -> program -> ad break -> ident -> program -> ...
 # ---------------------------------------------------------------------------
 
-add "$I/ident-a.mp4"              #   6s   "CHANNEL 4"
+add "$I/ident.mp4"                #   6s 
 add "$P/01-morning-show.mp4"      #  20s
 add "$A/ad-01.mp4"                #  12s
 add "$A/ad-02.mp4"                #  12s
 
-add "$I/ident-b.mp4"              #   6s   "BACK SHORTLY"
+add "$I/ident.mp4"                #   6s
 add "$P/02-nature-doc.mp4"        #  20s
 add "$A/ad-03.mp4"                #  12s
 
-add "$I/ident-a.mp4"              #   6s
+add "$I/ident.mp4"                #   6s
 add "$P/03-trivia-night.mp4"      #  20s
 add "$A/ad-01.mp4"                #  12s
 add "$A/ad-03.mp4"                #  12s
 
-add "$I/ident-b.mp4"              #   6s
+add "$I/ident.mp4"                #   6s
 add "$P/04-late-movie.mp4"        #  20s
 add "$A/ad-02.mp4"                #  12s
 
