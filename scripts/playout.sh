@@ -84,6 +84,22 @@ fi
 # reconnects, and they quietly consume disk.
 rm -f "$OUT"/*.ts "$OUT"/*.m3u8
 
+# --- Program guide. GUIDE=0 to turn it off. --------------------------------
+# Records what is about to play and the moment it starts, so the guide can
+# work out what is on air later. Deliberately non-fatal: set -e would
+# otherwise let a database issue stop the channel over a missing guide.
+GUIDE="${GUIDE:-1}"
+VENV_PY="$ROOT/.venv/bin/python"
+
+if [[ "$GUIDE" == "1" ]]; then
+    if [[ -x "$VENV_PY" ]]; then
+        "$VENV_PY" "$ROOT/app/start_broadcast.py" \
+            || echo "WARNING: guide not recorded. The channel will run without it." >&2
+    else
+        echo "WARNING: no .venv found, skipping the guide." >&2
+    fi
+fi
+
 echo "================================================================"
 echo " CHANNEL ON AIR"
 echo "----------------------------------------------------------------"

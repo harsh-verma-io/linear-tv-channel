@@ -6,6 +6,7 @@ Endpoints:
     GET  /api/health          health check
     POST /api/run             start of a run -> {run_id}
     POST /api/sample          reading taken during that run
+    GET  /api/guide?at=...    what is on air at a given moment
 
 Usage:
 
@@ -15,6 +16,7 @@ Listens on 127.0.0.1:5001 — localhost
 """
 
 import os
+from datetime import datetime, timedelta, timezone
 
 import psycopg
 from flask import Flask, jsonify, request
@@ -131,6 +133,107 @@ def add_sample():
 
     return jsonify(ok=True, sample_id=sample_id), 201
 
+# ---------------------------------------------------------------------------
+# GET /api/guide — what is on air at a given moment.
+# ---------------------------------------------------------------------------
+UPCOMING = 4          # how many items to list beyond "next"
+
+
+@app.get("/api/guide")
+def guide():
+    at_param = request.args.get("at")
+    if at_param:
+        try:
+            # Browsers send "…Z" for UTC; fromisoformat wants "+00:00".
+            at = datetime.fromisoformat(at_param.replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify(error=f"bad timestamp: {at_param}"), 400
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+    else:
+        # No ?at= means "right now", which makes the endpoint easy to curl.
+        at = datetime.now(timezone.utc)
+
+    try:
+        with psycopg.connect(DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, started_at, cycle_s
+                    FROM broadcasts
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                    """
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return jsonify(error="no broadcast recorded"), 404
+                broadcast_id, started_at, cycle_s = row
+
+                cur.execute(
+                    """
+                    SELECT position, title, kind, offset_s, duration_s
+                    FROM broadcast_items
+                    WHERE broadcast_id = %s
+                    ORDER BY position
+                    """,
+                    (broadcast_id,),
+                )
+                items = [
+                    {"position": r[0], "title": r[1], "kind": r[2],
+                     "offset_s": r[3], "duration_s": r[4]}
+                    for r in cur.fetchall()
+                ]
+    except psycopg.Error as e:
+        return jsonify(error=str(e)), 500
+
+    if not items:
+        return jsonify(error=f"broadcast {broadcast_id} has no items"), 500
+
+    # How far into the loop.
+    elapsed = (at - started_at).total_seconds()
+    position_s = elapsed % cycle_s
+
+    # The last item that has already begun.
+    index = 0
+    for i, item in enumerate(items):
+        if item["offset_s"] > position_s:
+            break
+        index = i
+
+    def described(i, starts_at):
+        item = items[i]
+        return {
+            "position": item["position"],
+            "title": item["title"],
+            "kind": item["kind"],
+            "duration_s": round(item["duration_s"], 1),
+            "starts_at": starts_at.isoformat(),
+            "ends_at": (starts_at
+                        + timedelta(seconds=item["duration_s"])).isoformat(),
+        }
+
+    into = position_s - items[index]["offset_s"]
+    cursor = at - timedelta(seconds=into)
+
+    now = described(index, cursor)
+    now["remaining_s"] = round(items[index]["duration_s"] - into, 1)
+
+    schedule = []
+    cursor += timedelta(seconds=items[index]["duration_s"])
+    for n in range(1, UPCOMING + 1):
+        i = (index + n) % len(items)
+        schedule.append(described(i, cursor))
+        cursor += timedelta(seconds=items[i]["duration_s"])
+
+    return jsonify(
+        broadcast_id=broadcast_id,
+        at=at.isoformat(),
+        cycle_s=round(cycle_s, 1),
+        now=now,
+        next=schedule[0],
+        upcoming=schedule[1:],
+    )
 
 if __name__ == "__main__":
     # host="127.0.0.1" and not "0.0.0.0": this must not be reachable from the
