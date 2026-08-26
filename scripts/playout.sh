@@ -7,7 +7,12 @@
 #
 # Usage:
 #   ./scripts/playout.sh                 # 6-second segments (default)
-#   SEGMENT_TIME=2 ./scripts/playout.sh  # 2-second segments 
+#   SEGMENT_TIME=2 ./scripts/playout.sh  # 2-second segments
+#   SOURCE=camera ./scripts/playout.sh   # live from the built-in camera
+#   SOURCE=camera CAMERA=1:0 ./...       # a different device
+#
+# List camera devices with:
+#   ffmpeg -f avfoundation -list_devices true -i ""
 #
 # Stop it with Ctrl-C.
 #
@@ -18,6 +23,8 @@ PLAYLIST="$ROOT/stream/playlist.txt"
 OUT="$ROOT/stream"
 
 # --- Channel format. Must match scripts/make-test-clips.sh. -----------------
+WIDTH=1280               # only used by the camera; files use their own
+HEIGHT=720
 FPS=30
 GOP=60                                   # keyframe every 2s
 VIDEO_BITRATE=2500k
@@ -26,6 +33,28 @@ AUDIO_BITRATE=128k
 # --- HLS tuning. -----------------------------------------------------------
 SEGMENT_TIME="${SEGMENT_TIME:-6}"        # seconds per segment
 PLAYLIST_SIZE="${PLAYLIST_SIZE:-6}"      # how many segments exist in manifest
+
+# --- Where the frames come from. -------------------------------------------
+SOURCE="${SOURCE:-playlist}"
+CAMERA="${CAMERA:-0:0}"                  # video:audio device index
+
+case "$SOURCE" in
+    playlist)
+        # -re paces the file to real time. Without it FFmpeg would read the
+        # whole playlist as fast as the disk allows.
+        INPUT=(-re -stream_loop -1 -f concat -safe 0 -i "$PLAYLIST")
+        ;;
+    camera)
+        # No -re. A camera cannot be slowed down; it already produces frames
+        # at exactly one speed, because that is how fast reality happens.
+        INPUT=(-f avfoundation -framerate "$FPS"
+               -video_size "${WIDTH}x${HEIGHT}" -pix_fmt nv12 -i "$CAMERA")
+        ;;
+    *)
+        echo "ERROR: SOURCE must be 'playlist' or 'camera', got '$SOURCE'" >&2
+        exit 1
+        ;;
+esac
 
 # --- Stamped wall-clock. CLOCK=0 to turn it off. ---------------------------
 # Stamps wall-clock time onto every outgoing frame, so the delay between what
@@ -74,7 +103,7 @@ fi
 # ---------------------------------------------------------------------------
 # Check if playlist exists
 # ---------------------------------------------------------------------------
-if [[ ! -f "$PLAYLIST" ]]; then
+if [[ "$SOURCE" == "playlist" && ! -f "$PLAYLIST" ]]; then
     echo "ERROR: no playlist at $PLAYLIST" >&2
     echo "Run ./scripts/make-playlist.sh first." >&2
     exit 1
@@ -91,7 +120,7 @@ rm -f "$OUT"/*.ts "$OUT"/*.m3u8
 GUIDE="${GUIDE:-1}"
 VENV_PY="$ROOT/.venv/bin/python"
 
-if [[ "$GUIDE" == "1" ]]; then
+if [[ "$GUIDE" == "1" && "$SOURCE" == "playlist" ]]; then
     if [[ -x "$VENV_PY" ]]; then
         "$VENV_PY" "$ROOT/app/start_broadcast.py" \
             || echo "WARNING: guide not recorded. The channel will run without it." >&2
@@ -103,7 +132,11 @@ fi
 echo "================================================================"
 echo " CHANNEL ON AIR"
 echo "----------------------------------------------------------------"
-echo " playlist       : $PLAYLIST"
+if [[ "$SOURCE" == "camera" ]]; then
+    echo " source         : camera $CAMERA (live)"
+else
+    echo " source         : $PLAYLIST"
+fi
 echo " output         : $OUT/index.m3u8"
 echo " segment length : ${SEGMENT_TIME}s"
 echo " manifest holds : ${PLAYLIST_SIZE} segments"
@@ -116,9 +149,7 @@ echo
 exec ffmpeg -hide_banner -loglevel warning -stats \
     \
     `# --- INPUT ---------------------------------------------------------` \
-    -re \
-    -stream_loop -1 \
-    -f concat -safe 0 -i "$PLAYLIST" \
+    "${INPUT[@]}" \
     \
     `# --- FILTERS -------------------------------------------------------` \
     -vf "$VF" \
