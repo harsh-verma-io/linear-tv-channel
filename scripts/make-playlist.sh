@@ -51,23 +51,32 @@ A="$ROOT/media/ads"
 # Pattern: ident -> program -> ad break -> ident -> program -> ...
 # ---------------------------------------------------------------------------
 
-add "$I/ident.mp4"                #  10s 
-add "$P/01-morning-show.mp4"      #  20s
-add "$A/ad-01.mp4"                #  12s
-add "$A/ad-02.mp4"                #  12s
+add "$I/ident.mp4"
+add "$P/01-agent-327.mp4"
+add "$A/ad-apple.mp4"
+add "$A/ad-ronaldo.mp4"
 
-add "$I/ident.mp4"                #  10s
-add "$P/02-nature-doc.mp4"        #  20s
-add "$A/ad-03.mp4"                #  12s
+add "$I/ident.mp4"
+add "$P/02-cute-monkey.mp4"
+add "$A/ad-cola.mp4"
 
-add "$I/ident.mp4"                #  10s
-add "$P/03-trivia-night.mp4"      #  20s
-add "$A/ad-01.mp4"                #  12s
-add "$A/ad-03.mp4"                #  12s
+add "$I/ident.mp4"
+add "$P/03-wing-it.mp4"
+add "$A/ad-beyonce.mp4"
+add "$A/ad-ronaldo.mp4"
 
-add "$I/ident.mp4"                #  10s
-add "$P/04-late-movie.mp4"        #  20s
-add "$A/ad-02.mp4"                #  12s
+add "$I/ident.mp4"          
+add "$P/04-squirrel-munching.mp4"
+add "$A/ad-cola.mp4"
+
+add "$I/ident.mp4"           
+add "$P/05-silly-space-robo.mp4"
+add "$A/ad-ronaldo.mp4"
+add "$A/ad-apple.mp4"         
+
+add "$I/ident.mp4"          
+add "$P/06-coffee-run.mp4"  
+add "$A/ad-beyonce.mp4"
 
 # ---------------------------------------------------------------------------
 # Report
