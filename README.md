@@ -5,17 +5,28 @@ A self-running linear television channel, built from scratch on macOS with FFmpe
 > **This is a lab/test environment.**
 
 Not video-on-demand. A **linear channel**: it plays continuously on a schedule whether or not anyone
-is watching. Tune in at 8:47 pm, and you will get whatever is playing at 8:47 pm, mid-scene. Pauses, rewinds,
-and catch-ups are not allowed. 
+is watching. Tune in at 8:47 pm, and you will get whatever is playing at 8:47 pm, mid-scene. Pauses, rewinds, and catch-ups are not allowed. 
+
+---
+
+## The channel
+
+<p align="center">
+  <img src="docs/viewer.png" width="100%" alt="The webpage: a programme guide beside the stream, with a live latency lab below">
+</p>
+
+The screenshot above presents the channel running as anyone who visits the page would see it. The guide on the right knows what is on air, how much is left of it, and what's next, all worked out from the playout loop itself rather than from a hardcoded schedule. Underneath is a live latency lab measuring these factors: how far behind live the stream is, how much video is buffered ahead, how many frames have been dropped, every reading is rendered 4x per second and stored into Postgres each second for stream analysis and logging.
+
+That is the part I like most. The same page is both the television and the
+instrument, so every visitor is also a measurement probe. Which is where the
+numbers below came from.
 
 ---
 
 ## The interesting part
 
-The channel stamps the wall clock onto every frame, then the viewer page
-measures how far behind real time the picture is and writes the reading to
-Postgres. Across fourteen runs and about 8,400 measurements, a few things came
-out clearly.
+During the lab tests, the channel stamps the wall clock onto every frame, then the viewer page measures how far behind real time the picture is and writes the reading to
+Postgres. Across fourteen runs and about 8,400 measurements, a few things became clear.
 
 <p align="center">
   <img src="docs/fig1-latency-vs-segment.png" width="39%" valign="top" alt="Latency against segment length">
@@ -46,6 +57,8 @@ run sat within a second of the uncapped ones, but time to first frame went from
 **It holds.** An hour of unattended playback moved the latency by 8
 milliseconds, with no stalls and no gaps in 3,579 readings.
 
+**And it works outside the lab environment.** Since these experimental runs the channel has been watched from New York, Pennsylvania, California, and Delhi, India through a Cloudflare Tunnel, and it behaved the way the numbers predict.
+
 📊 **[Full write-up with all six figures and the methodology →](docs/findings.md)**
 
 Raw data for every run is in [`data/`](data).
@@ -56,11 +69,14 @@ Raw data for every run is in [`data/`](data).
 
 ```
 media/*.mp4 ──> playout.sh ──> one FFmpeg process ──┬──> HLS segments ──> nginx ──> browser
-                                                    └──> SRT stream ────> ffplay
-                                                                             │
-                                        browser measures its own latency ────┤
-                                                                             ▼
-                                              Flask API ──> Postgres ──> chart.py
+                    │                               └──> SRT stream ────> ffplay        │
+                    │                                                                   │
+                    │ writes the running order                posts its latency         │
+                    │ and start time, once                    readings, asks the guide  │
+                    ▼                                                                   ▼
+                 Postgres  <──────────────────────────────────────────────────>  Flask API
+                    │
+                    └──> chart.py
 ```
 
 One FFmpeg process reads a concat playlist, loops forever, burns the wall clock
@@ -72,6 +88,13 @@ The browser works out its own latency from the `PROGRAM-DATE-TIME` tag in the
 HLS manifest, which says what wall-clock moment the video started. Subtract the
 current playback position from that and compare against the clock. No stopwatch
 and no second camera.
+
+The programme guide relies on arithmetic the same way. Back-end doesn't need to 
+communicate with front-end to learn what's on air. playout records the moment the 
+brodcast loop began and how long each clip runs, so position in the running order 
+comes from elapsed seconds modulo the length of the loop. The page asks about the 
+timestamp of the frame it is currently showing rather than the current clock, which 
+is what keeps the guide in sync with the frames being displayed to the viewer live.
 
 `scripts/experiment.sh` runs one measured condition end to end: start the
 channel, wait for the manifest to fill, launch an isolated browser with timer
@@ -91,21 +114,25 @@ a summary straight from the database.
 | Storage | PostgreSQL |
 | Viewer | HTML/JS + hls.js |
 | Charts | matplotlib |
+| Public access | Cloudflare Tunnel (`cloudflared`) |
 
 ---
 
 ## Layout
 
 ```
-app/         latency_log.py        Flask API, records runs and readings
+app/         latency_log.py        Flask API: records readings, serves the guide
+             start_broadcast.py    records the running order when playout starts
              chart.py              reads Postgres, writes the figures
-db/          schema.sql            two tables, runs and samples
+db/          schema.sql            runs and samples, broadcasts and broadcast_items
 scripts/     playout.sh            the channel itself, one FFmpeg process
              experiment.sh         runs one measured condition, start to finish
              make-test-clips.sh    generates format-consistent test footage
+             make-ident.sh         the channel ident, bars and a four-chord loop
+             normalise.sh          converts any footage into the channel format
              make-playlist.sh      builds the running order
 nginx/       tv-channel.conf       serves the page, the stream, and proxies the API
-web/         index.html            viewer with a live latency readout
+web/         index.html            viewer with a programme guide and latency readout
 data/        runs.csv              every run and every reading, as recorded
 docs/        findings.md           the findings, plus six figures
 media/       source video (gitignored)
@@ -122,14 +149,30 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 createdb tvchannel
 psql -d tvchannel -f db/schema.sql
+```
 
-./scripts/make-clips.sh          # generate test footage
+Build the media. Drop your own footage into `media/programs` and `media/ads`,
+or generate test clips:
+
+```bash
+./scripts/make-test-clips.sh     # synthetic footage, skip if using your own
+./scripts/make-ident.sh          # the channel ident
+./scripts/normalise.sh           # convert everything into the channel format
 ./scripts/make-playlist.sh       # build the running order
+```
+
+Then put it on air:
+
+```bash
 .venv/bin/python app/latency_log.py &
 ./scripts/playout.sh
 ```
 
-Then open `http://localhost:8888`.
+Open `http://localhost:8888`. To share it with someone outside your network:
+
+```bash
+cloudflared tunnel --url http://localhost:8888
+```
 
 To run a measured experiment instead:
 
